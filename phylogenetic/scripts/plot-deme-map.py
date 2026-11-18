@@ -20,6 +20,7 @@ candidate positions against the real rendered text extents.
 """
 import argparse
 import json
+import textwrap
 from collections import Counter, defaultdict
 from itertools import combinations
 
@@ -157,6 +158,42 @@ def relax_positions(true_pos, radii, pad=PIE_PAD, max_shift=MAX_SHIFT,
     return pos
 
 
+def measure_legend(fig_width, spec, font, title_font):
+    """Render a legend on a throwaway canvas to get its size in inches.
+
+    The legend band's depth has to be known before the real figure is built,
+    and at large --font-scale the legends no longer fit on one row, so we
+    measure them first and pack them into rows afterwards.
+    """
+    probe = plt.figure(figsize=(fig_width, 6))
+    legend = probe.legend(
+        handles=spec["handles"], title=spec["title"], loc="upper left",
+        bbox_to_anchor=(0.0, 1.0), frameon=True, fontsize=font,
+        title_fontsize=title_font, **spec.get("kw", {}),
+    )
+    probe.canvas.draw()
+    bbox = legend.get_window_extent(probe.canvas.get_renderer())
+    size = (bbox.width / probe.dpi, bbox.height / probe.dpi)
+    plt.close(probe)
+    return size
+
+
+def pack_rows(specs, sizes, max_width, gap=0.35):
+    """Greedily pack legends into rows no wider than max_width."""
+    rows, current, used = [], [], 0.0
+    for spec, (width, height) in zip(specs, sizes):
+        advance = width if not current else gap + width
+        if current and used + advance > max_width:
+            rows.append(current)
+            current, used = [], 0.0
+            advance = width
+        current.append((spec, width, height))
+        used += advance
+    if current:
+        rows.append(current)
+    return rows
+
+
 def wrapped_offsets(x1, x2):
     """Longitude offsets needed to draw a line that may cross the map edge."""
     if x2 - x1 > 180:
@@ -219,6 +256,13 @@ def place_labels(ax, fig, entries, pie_display, fontsize):
                 break
 
         px, py, rect = best
+        # Keep the label inside the axes, so a deme near the frame edge does
+        # not get its label clipped off the figure.
+        bounds = ax.get_window_extent()
+        half_w, half_h = tw / 2, th / 2
+        px = min(max(px, bounds.x0 + half_w + 2), bounds.x1 - half_w - 2)
+        py = min(max(py, bounds.y0 + half_h + 2), bounds.y1 - half_h - 2)
+        rect = (px - half_w, py - half_h, px + half_w, py + half_h)
         placed.append(rect)
         inv = ax.transData.inverted()
         results.append((name, text, inv.transform((px, py)), (dx, dy), redge))
@@ -251,6 +295,12 @@ def main():
     parser.add_argument("--coastlines", default=None, choices=["110m", "50m", "10m"],
                         help="default 110m globally, 50m when cropped")
     parser.add_argument("--label-fontsize", type=float, default=6.6)
+    parser.add_argument(
+        "--font-scale", type=float, default=1.0,
+        help="multiply every font size (deme labels, legends, title, "
+             "footnote) and the legend markers. The legend band is measured "
+             "and re-packed to match, so legends stay on the page.",
+    )
     parser.add_argument("--min-line-count", type=int, default=1)
     parser.add_argument(
         "--focus-deme", default="Singapore",
@@ -270,12 +320,9 @@ def main():
     all_lineages = sorted({lin for c in per_deme.values() for lin in c})
     colors = lineage_colors(meta, args.lineage_key, all_lineages)
 
-    # The lineage legend drives how deep the legend band has to be: DENV-1 and
-    # DENV-2 have 24 Nextclade major lineages where DENV-4 has 7, and a fixed
-    # band would push the legend off the bottom of the figure.
+    # DENV-1 and DENV-2 have 24 Nextclade major lineages where DENV-4 has 7,
+    # so the lineage legend's shape varies a lot between serotypes.
     lineage_ncol = max(3, min(5, -(-len(all_lineages) // 6)))
-    lineage_rows = -(-len(all_lineages) // lineage_ncol)
-    legend_band = max(LEGEND_BAND, 0.55 + lineage_rows * 0.21 + 0.50)
 
     if args.central_longitude is not None:
         central_longitude = args.central_longitude
@@ -300,6 +347,100 @@ def main():
                           max_shift=MAX_SHIFT * scale)
     leader_min = LEADER_MIN * scale
 
+    # --- count the lines before drawing, so the legends can be built and
+    #     measured before the canvas exists -------------------------------
+    focus = args.focus_deme or None
+    if focus and focus not in pos:
+        print(f"  NOTE: focus deme {focus!r} is not on this tree; no highlighting")
+        focus = None
+
+    # Background lines first, highlighted ones on top.
+    ordered = [
+        (pair, count) for pair, count in sorted(
+            transitions.items(),
+            key=lambda kv: (focus in kv[0] if focus else False, kv[1]),
+        )
+        if count >= args.min_line_count
+        and pair[0] in pos and pair[1] in pos
+    ]
+    drawn, focus_counts = Counter(), Counter()
+    for (source, target), count in ordered:
+        drawn[bin_for(count, LINE_BINS)[5]] += 1
+        if focus and target == focus:
+            focus_counts["in"] += count
+        elif focus and source == focus:
+            focus_counts["out"] += count
+
+    # --- build the legends and work out how deep their band must be -------
+    fs = args.font_scale
+    leg_font, leg_title_font = 8.2 * fs, 9.2 * fs
+    label_fontsize = args.label_fontsize * fs
+
+    # A scaled-up title may wrap onto several lines; reserve room for them.
+    title_size = 14 * fs
+    title_wrap = max(20, int(args.fig_width * 72 / (0.52 * title_size)))
+    title_text = textwrap.fill(args.title, title_wrap) if args.title else ""
+    title_band = (0.18 + (title_text.count(chr(10)) + 1) * title_size / 72 * 1.3
+                  + 6 * fs / 72) if title_text else 0.20
+
+    legend_specs = [
+        {
+            "handles": [
+                Line2D([], [], marker="o", linestyle="", markersize=7.5 * fs,
+                       markerfacecolor=colors[l], markeredgecolor="white",
+                       markeredgewidth=0.5 * fs, label=l)
+                for l in all_lineages
+            ],
+            "title": "Nextclade major lineage",
+            "kw": {"ncol": lineage_ncol, "borderpad": 0.8,
+                   "handletextpad": 0.6, "columnspacing": 1.3},
+        },
+        {
+            "handles": [
+                Line2D([], [], marker="o", linestyle="",
+                       markerfacecolor="#cfcfcf", markeredgecolor="#4a4a4a",
+                       markeredgewidth=0.55 * fs,
+                       markersize=(3.2 + 1.5 * r) * fs,
+                       label=f"{lbl} tips")
+                for (_lo, _hi, r, lbl) in SIZE_BINS
+            ],
+            "title": "Tips per deme (binned)",
+            "kw": {"borderpad": 0.9, "labelspacing": 1.5, "handletextpad": 1.2},
+        },
+        {
+            "handles": [
+                Line2D([], [], color=LINE_COLOR, linewidth=w * args.line_scale,
+                       alpha=a, label=f"{lbl} events  (n={drawn.get(lbl, 0)})")
+                for (_lo, _hi, w, a, _arrow, lbl) in LINE_BINS
+            ],
+            "title": "Inferred deme transitions (binned)",
+            "kw": {"borderpad": 0.9, "labelspacing": 1.4, "handlelength": 3.6},
+        },
+    ]
+    if focus:
+        legend_specs.append({
+            "handles": [
+                Line2D([], [], color=IN_COLOR, linewidth=3.0 * args.line_scale,
+                       alpha=FOCUS_MIN_ALPHA,
+                       label=f"into {focus}  ({focus_counts['in']} events)"),
+                Line2D([], [], color=OUT_COLOR, linewidth=3.0 * args.line_scale,
+                       alpha=FOCUS_MIN_ALPHA,
+                       label=f"out of {focus}  ({focus_counts['out']} events)"),
+            ],
+            "title": f"{focus} focus",
+            "kw": {"borderpad": 0.9, "labelspacing": 1.4, "handlelength": 3.6},
+        })
+
+    legend_sizes = [
+        measure_legend(args.fig_width, spec, leg_font, leg_title_font)
+        for spec in legend_specs
+    ]
+    legend_rows = pack_rows(legend_specs, legend_sizes, args.fig_width * 0.96)
+    row_heights = [max(h for _s, _w, h in row) for row in legend_rows]
+    footnote_in = 2 * (7.4 * fs / 72.0) * 1.55 + 0.20
+    legend_band = (sum(row_heights) + 0.30 * len(legend_rows)
+                   + footnote_in + 0.18)
+
     if args.extent:
         lon_min, lon_max, lat_min, lat_max = args.extent
         lon_span = lon_max - lon_min
@@ -314,7 +455,7 @@ def main():
     # Size the canvas to the map's aspect ratio, plus bands for title/legends.
     ax_width_in = args.fig_width * AX_WIDTH_FRAC
     ax_height_in = ax_width_in / (lon_span / (lat_max - lat_min))
-    fig_height = ax_height_in + legend_band + TITLE_BAND
+    fig_height = ax_height_in + legend_band + title_band
     legend_y = legend_band / fig_height
     fig = plt.figure(figsize=(args.fig_width, fig_height))
     ax = fig.add_axes(
@@ -340,10 +481,16 @@ def main():
     ax.spines["geo"].set_linewidth(0.6)
 
     # --- transmission lines (under the pies) -------------------------------
-    focus = args.focus_deme or None
-    if focus and focus not in pos:
-        print(f"  NOTE: focus deme {focus!r} is not on this tree; no highlighting")
-        focus = None
+    # Settle the layout so transData is final before converting pie radii
+    # (degrees) into the point units that shrinkA/shrinkB expect.
+    fig.canvas.draw()
+
+    def radius_points(deme):
+        """The deme's drawn radius, including its white halo, in points."""
+        cx, _cy = ax.transData.transform(pos[deme])
+        ex, _ey = ax.transData.transform(
+            (pos[deme][0] + radii[deme] * 1.1, pos[deme][1]))
+        return abs(ex - cx) * 72.0 / fig.dpi
 
     def styled(source, target, width, alpha):
         """Colour, alpha, width and z-order for one transmission line."""
@@ -353,24 +500,12 @@ def main():
             return OUT_COLOR, max(alpha, FOCUS_MIN_ALPHA), max(width, FOCUS_MIN_WIDTH), 3.6
         return LINE_COLOR, alpha, width, 2 + width / 10
 
-    drawn = Counter()
-    focus_counts = Counter()
-    # Draw background lines first, then the highlighted ones on top.
-    ordered = sorted(
-        transitions.items(),
-        key=lambda kv: (focus in kv[0] if focus else False, kv[1]),
-    )
     for (source, target), count in ordered:
-        if count < args.min_line_count or source not in pos or target not in pos:
-            continue
-        _lo, _hi, width, alpha, arrow, label = bin_for(count, LINE_BINS)
-        drawn[label] += 1
+        _lo, _hi, width, alpha, arrow, _label = bin_for(count, LINE_BINS)
         color, alpha, width, zorder = styled(source, target, width, alpha)
         width *= args.line_scale
-        if focus and target == focus:
-            focus_counts["in"] += count
-        elif focus and source == focus:
-            focus_counts["out"] += count
+        shrink_a = radius_points(source) + 1.5
+        shrink_b = radius_points(target) + 2.0 + (0.9 * width if arrow else 0.0)
         (x1, y1), (x2, y2) = pos[source], pos[target]
         for off1, off2 in wrapped_offsets(x1, x2):
             ax.add_patch(FancyArrowPatch(
@@ -380,7 +515,9 @@ def main():
                 mutation_scale=8 + 2.0 * width,
                 linewidth=width, color=color, alpha=alpha,
                 zorder=zorder, capstyle="round", joinstyle="round",
-                shrinkA=2.5, shrinkB=2.5,
+                # Stop short of the pies so the arrow tip stays visible
+                # rather than being drawn underneath the target pie.
+                shrinkA=shrink_a, shrinkB=shrink_b,
             ))
 
     # --- leader lines back to true centroids --------------------------------
@@ -432,8 +569,8 @@ def main():
             for d in sorted(visible, key=lambda d: -totals[d])
         ]
         for name, text, (lx, ly), (ax_, ay), redge in place_labels(
-                ax, fig, entries, pie_display, fontsize=args.label_fontsize):
-            ax.text(lx, ly, text, ha="center", va="center", fontsize=args.label_fontsize,
+                ax, fig, entries, pie_display, fontsize=label_fontsize):
+            ax.text(lx, ly, text, ha="center", va="center", fontsize=label_fontsize,
                     color="#141414", zorder=8,
                     path_effects=[pe.withStroke(linewidth=2.1, foreground="white")])
             # short connector when the label sits well away from its pie
@@ -444,65 +581,32 @@ def main():
                         [ay + uy * radii[name], ly - uy * 1.4],
                         color="#8a8a8a", linewidth=0.42, alpha=0.8, zorder=7)
 
-    # --- legends, in a band below the map -----------------------------------
-    lineage_handles = [
-        Line2D([], [], marker="o", linestyle="", markersize=7.5,
-               markerfacecolor=colors[l], markeredgecolor="white",
-               markeredgewidth=0.5, label=l)
-        for l in all_lineages
-    ]
-    leg1 = fig.legend(handles=lineage_handles, title="Nextclade major lineage",
-                      loc="upper left", bbox_to_anchor=(0.035, legend_y - 0.015),
-                      frameon=True, fontsize=8.2, title_fontsize=9.2, ncol=lineage_ncol,
-                      borderpad=0.8, handletextpad=0.6, columnspacing=1.3)
+    # --- legends, packed into the measured band below the map -------------
+    x_margin = args.fig_width * 0.02
+    y_cursor = legend_band - 0.10
+    for row, row_height in zip(legend_rows, row_heights):
+        x_cursor = x_margin
+        for spec, width, _height in row:
+            legend = fig.legend(
+                handles=spec["handles"], title=spec["title"], loc="upper left",
+                bbox_to_anchor=(x_cursor / args.fig_width,
+                                y_cursor / fig_height),
+                frameon=True, fontsize=leg_font, title_fontsize=leg_title_font,
+                **spec.get("kw", {}),
+            )
+            legend.get_frame().set_edgecolor("#bbbbbb")
+            legend.get_frame().set_linewidth(0.6 * fs)
+            x_cursor += width + 0.35
+        y_cursor -= row_height + 0.30
 
-    size_handles = [
-        Line2D([], [], marker="o", linestyle="", markerfacecolor="#cfcfcf",
-               markeredgecolor="#4a4a4a", markeredgewidth=0.55,
-               markersize=3.2 + 1.5 * r, label=f"{lbl} tips")
-        for (_lo, _hi, r, lbl) in SIZE_BINS
-    ]
-    leg2 = fig.legend(handles=size_handles, title="Tips per deme (binned)",
-                      loc="upper left", bbox_to_anchor=(0.40, legend_y - 0.015),
-                      frameon=True, fontsize=8.2, title_fontsize=9.2,
-                      borderpad=0.9, labelspacing=1.5, handletextpad=1.2)
-
-    line_handles = [
-        Line2D([], [], color=LINE_COLOR, linewidth=w * args.line_scale, alpha=a,
-               label=f"{lbl} events  (n={drawn.get(lbl, 0)})")
-        for (_lo, _hi, w, a, _arrow, lbl) in LINE_BINS
-    ]
-    leg3 = fig.legend(handles=line_handles, title="Inferred deme transitions (binned)",
-                      loc="upper left", bbox_to_anchor=(0.635, legend_y - 0.015),
-                      frameon=True, fontsize=8.2, title_fontsize=9.2,
-                      borderpad=0.9, labelspacing=1.4, handlelength=3.6)
-
-    legends = [leg1, leg2, leg3]
-    if focus:
-        focus_handles = [
-            Line2D([], [], color=IN_COLOR, linewidth=3.0, alpha=FOCUS_MIN_ALPHA,
-                   label=f"into {focus}  ({focus_counts['in']} events)"),
-            Line2D([], [], color=OUT_COLOR, linewidth=3.0, alpha=FOCUS_MIN_ALPHA,
-                   label=f"out of {focus}  ({focus_counts['out']} events)"),
-        ]
-        leg4 = fig.legend(handles=focus_handles, title=f"{focus} focus",
-                          loc="upper left", bbox_to_anchor=(0.845, legend_y - 0.015),
-                          frameon=True, fontsize=8.2, title_fontsize=9.2,
-                          borderpad=0.9, labelspacing=1.4, handlelength=3.6)
-        legends.append(leg4)
-
-    for leg in legends:
-        leg.get_frame().set_edgecolor("#bbbbbb")
-        leg.get_frame().set_linewidth(0.6)
-
-    fig.text(0.035, 0.022,
+    fig.text(x_margin / args.fig_width, 0.10 / fig_height,
              "Pie area is binned, not proportional. Grey leader lines join a "
              "displaced pie to its true centroid (dot).\nArrowheads show "
              "inferred direction for bins of 3+ events.",
-             fontsize=7.4, color="#555555", va="bottom")
+             fontsize=7.4 * fs, color="#555555", va="bottom")
 
-    if args.title:
-        ax.set_title(args.title, fontsize=14, pad=11)
+    if title_text:
+        ax.set_title(title_text, fontsize=title_size, pad=6 * fs)
 
     fig.savefig(args.output, dpi=330, facecolor="white")
     pdf = args.output.rsplit(".", 1)[0] + ".pdf"

@@ -20,8 +20,10 @@ mkdir -p figures
 
 # South & Southeast Asia crop. Pie radii are in degrees, so a cropped map
 # needs a much smaller scale than the global one.
+# Pies are 4x the original crop size and every font/legend is 3x, for use at
+# slide/poster scale; the legend band measures and re-packs itself to suit.
 SEA_EXTENT=(72 142 -12 38)
-SEA_ARGS=(--pie-scale 0.16 --line-scale 1.15 --label-fontsize 8.5)
+SEA_ARGS=(--pie-scale 0.64 --line-scale 1.15 --label-fontsize 8.5 --font-scale 3)
 
 declare -A GENE_LABEL=([genome]="whole genome" [E]="E gene")
 
