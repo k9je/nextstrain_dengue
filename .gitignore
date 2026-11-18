@@ -41,3 +41,6 @@ logs/
 Icon?
 ehthumbs.db
 Thumbs.db
+
+# Generated publication figures (reproduce with scripts/make-all-figures.sh)
+figures/
