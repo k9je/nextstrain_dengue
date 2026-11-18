@@ -42,5 +42,7 @@ Icon?
 ehthumbs.db
 Thumbs.db
 
-# Generated publication figures (reproduce with scripts/make-all-figures.sh)
-figures/
+# Generated publication figures (reproduce with analysis/make-all-figures.sh).
+# The vector PDFs under analysis/figures/ ARE tracked; the large PNGs are not.
+phylogenetic/figures/
+analysis/figures/*.png

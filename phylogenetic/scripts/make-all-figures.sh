@@ -16,7 +16,9 @@ PYTHON=${PYTHON:-/hpc/home/ansellim/micromamba/envs/denvfig/bin/python}
 FOCUS=${1:-Singapore}
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$HERE"
-mkdir -p figures
+# Figures land in the repo-level analysis/ folder, not under phylogenetic/.
+OUT=${OUT:-"$(cd "$HERE/.." && pwd)/analysis/figures"}
+mkdir -p "$OUT"
 
 # South & Southeast Asia crop. Pie radii are in degrees, so a cropped map
 # needs a much smaller scale than the global one.
@@ -38,24 +40,24 @@ for serotype in denv1 denv2 denv3 denv4; do
     echo "=== $upper $gene ==="
     $PYTHON -I scripts/plot-deme-map.py --auspice-json "$json" \
       --focus-deme "$FOCUS" \
-      --output "figures/${serotype}_${gene}_deme_map.png" \
+      --output "$OUT/${serotype}_${gene}_deme_map.png" \
       --title "$upper global phylogeography ($glabel): demes = country in Asia, region elsewhere" \
       2>&1 | grep -vi downloadwarning | sed 's/^/    /' || ((failures++))
 
     $PYTHON -I scripts/plot-deme-map.py --auspice-json "$json" \
       --focus-deme "$FOCUS" --deme-key country \
-      --output "figures/${serotype}_${gene}_country_map.png" \
+      --output "$OUT/${serotype}_${gene}_country_map.png" \
       --title "$upper global phylogeography ($glabel): demes = country everywhere" \
       2>&1 | grep -vi downloadwarning | sed 's/^/    /' || ((failures++))
 
     $PYTHON -I scripts/plot-deme-map.py --auspice-json "$json" \
       --focus-deme "$FOCUS" \
       --extent "${SEA_EXTENT[@]}" "${SEA_ARGS[@]}" \
-      --output "figures/${serotype}_${gene}_deme_map_sea.png" \
+      --output "$OUT/${serotype}_${gene}_deme_map_sea.png" \
       --title "$upper phylogeography ($glabel), South & Southeast Asia: demes = country in Asia, region elsewhere" \
       2>&1 | grep -vi downloadwarning | sed 's/^/    /' || ((failures++))
   done
 done
 
 echo
-echo "=== wrote $(ls figures/*.png 2>/dev/null | wc -l) PNGs / $(ls figures/*.pdf 2>/dev/null | wc -l) PDFs; $failures failure(s) ==="
+echo "=== wrote $(ls "$OUT"/*.png 2>/dev/null | wc -l) PNGs / $(ls "$OUT"/*.pdf 2>/dev/null | wc -l) PDFs into $OUT; $failures failure(s) ==="

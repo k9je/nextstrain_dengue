@@ -1,5 +1,29 @@
 # Phylogeographic demes and transmission lines
 
+## Where things live
+
+| Path | What |
+|---|---|
+| `analysis/figures/` | the rendered figures (vector **PDF**, tracked in git) |
+| `analysis/README.md` | this document |
+| `phylogenetic/` | the Snakemake workflow, including all the deme changes |
+
+The workflow changes are **not** in this folder and cannot be: Snakemake loads
+`rules/deme.smk`, `defaults/deme_overrides.tsv` and `scripts/*.py` by fixed
+relative path, and several of the changes are edits to upstream files
+(`Snakefile`, `rules/export.smk`, `rules/merge_inputs.smk`,
+`rules/prepare_sequences.smk`, `defaults/config_dengue.yaml`,
+`defaults/color_orderings.tsv`). Moving them would stop the workflow running.
+
+**Every path below is relative to `phylogenetic/`.**
+
+The high-resolution PNGs are deliberately not tracked (60 MB); regenerate the
+whole set, PNG and PDF, with:
+
+```bash
+bash phylogenetic/scripts/make-all-figures.sh
+```
+
 This fork adds a configurable **deme** trait so Auspice draws **transmission
 lines** on the map between geographic units of our choosing, rather than only
 between Nextstrain's stock `country` / `region` columns.
