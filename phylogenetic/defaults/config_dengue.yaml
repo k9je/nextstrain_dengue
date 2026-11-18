@@ -13,10 +13,26 @@ inputs:
 strain_id_field: "accession"
 display_strain_field: "strain"
 
+# Phylogeographic demes. A deme is the geographic unit whose ancestral states
+# are reconstructed by `augur traits`, and therefore the unit between which
+# Auspice draws transmission lines on the map.
+#   - inside `country_level_region`, each COUNTRY is its own deme
+#   - outside it, each REGION is a deme, except for countries reassigned in
+#     `overrides` (used to split Nextstrain's very coarse "North America" into
+#     North America / Central America / Caribbean)
+deme:
+  column: "deme"
+  country_level_region: "Asia"
+  overrides: "defaults/deme_overrides.tsv"
+  extra_lat_longs: "defaults/lat_longs_deme_extra.tsv"
+
 filter:
   exclude: "defaults/exclude.txt"
   include: "defaults/{serotype}/include.txt"
-  group_by: "year region"
+  # Subsample evenly across deme-years so that ancestral-state reconstruction
+  # (and hence the transmission lines) is less distorted by the very uneven
+  # per-country sequencing effort.
+  group_by: "year deme"
   min_length:
     genome: 5000
     E: 1000
@@ -45,11 +61,11 @@ refine:
 traits:
   sampling_bias_correction: '3'
   traits_columns:
-    all: 'region serotype_genbank'
-    denv1: 'country region serotype_genbank'
-    denv2: 'country region serotype_genbank'
-    denv3: 'country region serotype_genbank'
-    denv4: 'country region serotype_genbank'
+    all: 'deme region serotype_genbank'
+    denv1: 'deme country region serotype_genbank'
+    denv2: 'deme country region serotype_genbank'
+    denv3: 'deme country region serotype_genbank'
+    denv4: 'deme country region serotype_genbank'
 
 clades:
   clade_definitions:

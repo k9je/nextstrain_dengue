@@ -3,7 +3,7 @@ This part of the workflow merges inputs based on what is defined in the config.
 
 OUTPUTS:
 
-    metadata  = results/{serotype}/metadata.tsv
+    metadata  = results/{serotype}/metadata_raw.tsv
     sequences = results/{serotype}/sequences.fasta
 
 The config dict is expected to have a top-level `inputs` list that defines the
@@ -68,7 +68,7 @@ if len(_input_metadata) == 1:
         input:
             metadata = _input_metadata[0],
         output:
-            metadata = "results/{serotype}/metadata.tsv",
+            metadata = "results/{serotype}/metadata_raw.tsv",
         log:
             "logs/{serotype}/decompress_metadata.txt",
         benchmark:
@@ -93,7 +93,7 @@ else:
             metadata = lambda w, input: list(map("=".join, input.items())),
             id_field = config['strain_id_field'],
         output:
-            metadata = "results/{serotype}/metadata.tsv"
+            metadata = "results/{serotype}/metadata_raw.tsv"
         log:
             "logs/{serotype}/merge_metadata.txt",
         benchmark:

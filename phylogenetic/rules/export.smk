@@ -19,6 +19,7 @@ See Augur's usage docs for these commands for more details.
 """
 
 import json
+import shutil
 
 
 rule colors:
@@ -86,6 +87,11 @@ rule prepare_auspice_config:
                 "type": "categorical"
               },
               {
+                "key": "deme",
+                "title": "Deme (country in Asia, region elsewhere)",
+                "type": "categorical"
+              },
+              {
                 "key": "serotype_genbank",
                 "title": "Serotype (Genbank metadata)",
                 "type": "categorical"
@@ -122,15 +128,19 @@ rule prepare_auspice_config:
               }
             ],
             "geo_resolutions": [
+              "deme",
               "country",
               "region"
             ],
             "display_defaults": {
               "map_triplicate": True,
-              "color_by": params.replace_clade_key,
+              "color_by": "deme",
+              "geo_resolution": "deme",
+              "transmission_lines": True,
               "tip_label": "strain"
             },
             "filters": [
+              "deme",
               "country",
               "region",
               "author"
@@ -183,6 +193,7 @@ rule export:
         description = config["export"]["description"],
         auspice_config = "results/defaults/{serotype}/{gene}/auspice_config.json",
         colors = "results/{serotype}/colors.tsv",
+        lat_longs = "results/{serotype}/lat_longs_deme.tsv",
     output:
         auspice_json = "auspice/dengue_{serotype}_{gene}.json"
     benchmark:
@@ -197,11 +208,47 @@ rule export:
             --metadata-id-columns {params.strain_id} \
             --node-data {input.branch_lengths} {input.traits} {input.clades} {input.nt_muts} {input.aa_muts} \
             --colors {input.colors} \
+            --lat-longs {input.lat_longs} \
             --description {input.description} \
             --auspice-config {input.auspice_config} \
             --include-root-sequence-inline \
             --output {output.auspice_json}
         """
+
+rule export_country_view:
+    """
+    Writing a second Auspice dataset defaulting to the standard
+    country-everywhere phylogeography
+
+    Both datasets come from the same tree and the same `augur traits` run, so
+    this only swaps which geo-resolution Auspice opens on: the `deme` dataset
+    opens on country-in-Asia/region-elsewhere demes, this one on countries
+    worldwide. Either dataset can still be switched to the other resolution
+    from the Auspice sidebar.
+    """
+    input:
+        auspice_json = "auspice/dengue_{serotype}_{gene}.json",
+        tip_freq = "auspice/dengue_{serotype}_{gene}_tip-frequencies.json",
+    output:
+        auspice_json = "auspice/dengue_{serotype}_{gene}_country.json",
+        tip_freq = "auspice/dengue_{serotype}_{gene}_country_tip-frequencies.json",
+    benchmark:
+        "benchmarks/{serotype}/{gene}/export_country_view.txt"
+    run:
+        with open(input.auspice_json) as fh:
+            data = json.load(fh)
+
+        display_defaults = data.setdefault("meta", {}).setdefault("display_defaults", {})
+        display_defaults["geo_resolution"] = "country"
+        display_defaults["color_by"] = "country"
+        display_defaults["transmission_lines"] = True
+
+        with open(output.auspice_json, "w") as fh:
+            json.dump(data, fh)
+
+        # Auspice finds the sidecar by dataset name, so it needs a copy.
+        shutil.copyfile(input.tip_freq, output.tip_freq)
+
 
 rule tip_frequencies:
     """

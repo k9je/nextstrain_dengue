@@ -262,3 +262,73 @@ genotype	4I
 genotype	4II
 genotype	4III
 genotype	4IV
+
+################
+# deme = country within Asia, region outside Asia
+# Ordered roughly west -> east across Asia, then the non-Asian regions, so that
+# the assigned colour scheme reads as a geographic gradient on the map.
+# assign-colors.py drops any value not present in the metadata, so this list is
+# deliberately broader than any single serotype's data.
+################
+# Asia - west & central
+deme	Turkey
+deme	Georgia
+deme	Armenia
+deme	Azerbaijan
+deme	Syria
+deme	Lebanon
+deme	Israel
+deme	Jordan
+deme	Iraq
+deme	Iran
+deme	Kuwait
+deme	Bahrain
+deme	Qatar
+deme	United Arab Emirates
+deme	Saudi Arabia
+deme	Yemen
+deme	Oman
+deme	Kazakhstan
+deme	Turkmenistan
+deme	Uzbekistan
+deme	Tajikistan
+deme	Kyrgyzstan
+deme	Afghanistan
+# Asia - south
+deme	Pakistan
+deme	India
+deme	Maldives
+deme	Sri Lanka
+deme	Nepal
+deme	Bhutan
+deme	Bangladesh
+# Asia - southeast
+deme	Myanmar
+deme	Thailand
+deme	Laos
+deme	Cambodia
+deme	Vietnam
+deme	Malaysia
+deme	Singapore
+deme	Brunei
+deme	Borneo
+deme	Indonesia
+deme	East Timor
+deme	Philippines
+# Asia - east
+deme	China
+deme	Hong Kong
+deme	Macau
+deme	Taiwan
+deme	Mongolia
+deme	North Korea
+deme	South Korea
+deme	Japan
+# Non-Asian regions
+deme	Oceania
+deme	Africa
+deme	Europe
+deme	North America
+deme	Central America
+deme	Caribbean
+deme	South America

@@ -54,7 +54,7 @@ rule filter:
             --group-by {params.group_by} \
             --subsample-max-sequences {params.subsample_max_sequences} \
             --min-length {params.min_length} \
-            --exclude-where country=? region=? date=? is_lab_host='true' \
+            --exclude-where country=? region=? deme=? date=? is_lab_host='true' \
             --query-columns is_lab_host:str
         """
 

@@ -1,0 +1,17 @@
+# All four serotypes, genome + E, with the deme phylogeography setup.
+#
+# Demes are each COUNTRY in Asia and each REGION outside Asia (with
+# Nextstrain's "North America" split into North America / Central America /
+# Caribbean). See the `deme:` block in defaults/config_dengue.yaml.
+#
+# Run with:
+#   snakemake --configfile build-configs/deme-phylogeo-all/config.yaml \
+#       -c 64 --set-threads align=16 tree=16
+#
+# denv4 is already built by build-configs/denv4-deme-phylogeo/; Snakemake will
+# reuse those outputs rather than rebuild them.
+
+serotypes: ['denv1', 'denv2', 'denv3', 'denv4']
+genes: ['genome', 'E']
+
+use_remote_files: True

@@ -1,0 +1,20 @@
+# Pilot build: global DENV-4 phylogeography with transmission lines.
+#
+# Demes are each COUNTRY in Asia and each REGION outside Asia (with
+# Nextstrain's "North America" split into North America / Central America /
+# Caribbean). See the `deme:` block in defaults/config_dengue.yaml.
+#
+# Run with:
+#   snakemake --configfile build-configs/denv4-deme-phylogeo/config.yaml -c8
+#
+# Everything else is inherited from defaults/config_dengue.yaml.
+
+serotypes: ['denv4']
+# 'genome' = whole-genome build (min length 5000, higher phylogenetic
+# resolution, fewer sequences); 'E' = envelope-gene build (min length 1000,
+# many more sequences and therefore better-populated demes).
+genes: ['genome', 'E']
+
+# Download the input metadata/sequences from data.nextstrain.org rather than
+# expecting an already-cached copy under .snakemake/storage/.
+use_remote_files: True
